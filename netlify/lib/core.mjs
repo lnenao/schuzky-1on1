@@ -170,7 +170,7 @@ function ics(slot, booking, method) {
     `DTSTAMP:${icsDate(new Date().toISOString())}`,
     `DTSTART:${icsDate(slot.start)}`,
     `DTEND:${icsDate(slot.end)}`,
-    `SUMMARY:${icsText(`Schůzka 1on1 (${c.ownerName})`)}`,
+    `SUMMARY:${icsText(`Schůzka 1na1 (${c.ownerName})`)}`,
     `LOCATION:${icsText(c.place)}`,
     `ORGANIZER;CN=${icsText(c.ownerName)}:mailto:${c.gmailUser}`,
     `ATTENDEE;CN=${icsText(booking.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:${booking.email}`,
@@ -183,11 +183,13 @@ function ics(slot, booking, method) {
 const manageUrl = booking => `${cfg().siteUrl.replace(/\/$/, '')}/sprava.html?t=${encodeURIComponent(booking.token)}`;
 
 function layout(paragraphs, link) {
-  const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:15px;color:#2a2220;line-height:1.55;max-width:560px">
+  return `<div style="background:#e8d2b5;padding:24px 12px;font-family:Nunito,Calibri,Arial,sans-serif">
+<div style="max-width:560px;margin:0 auto;background:#fbf6ef;border-radius:16px;overflow:hidden">
+<div style="background:#590907;color:#fbf6ef;padding:18px 24px;font-size:20px;font-weight:700">Schůzky 1na1 s ředitelem</div>
+<div style="padding:22px 24px;font-size:15px;color:#2a2220;line-height:1.55">
 ${paragraphs.map(p => `<p style="margin:0 0 12px">${p}</p>`).join('\n')}
-${link ? `<p style="margin:18px 0"><a href="${esc(link.href)}" style="background:#590907;color:#f7efe4;text-decoration:none;padding:9px 16px;border-radius:6px;display:inline-block">${esc(link.label)}</a></p>` : ''}
-<p style="margin:18px 0 0">${esc(cfg().ownerName)}</p></div>`;
-  return html;
+${link ? `<p style="margin:20px 0"><a href="${esc(link.href)}" style="background:#590907;color:#e8d2b5;text-decoration:none;padding:10px 20px;border-radius:999px;display:inline-block;font-weight:700">${esc(link.label)}</a></p>` : ''}
+<p style="margin:18px 0 0">${esc(cfg().ownerName)}</p></div></div></div>`;
 }
 const strip = s => s.replace(/<[^>]+>/g, '');
 
@@ -202,25 +204,25 @@ export async function sendMail(kind, slot, booking, extra = {}) {
 
   switch (kind) {
     case 'confirm':
-      subject = `Schůzka 1on1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
-      paras = ['Dobrý den,', `potvrzuji schůzku 1on1 ${when}, místo: ${where}.`,
+      subject = `Schůzka 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
+      paras = ['Dobrý den,', `potvrzuji schůzku 1na1 ${when}, místo: ${where}.`,
         `Termín lze přesunout nejpozději ${BOOK_MIN_HOURS} hodin předem a zrušit nejpozději ${CANCEL_MIN_HOURS} hodinu předem.`];
       break;
     case 'moved':
-      subject = `Změna termínu schůzky 1on1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
-      paras = ['Dobrý den,', `schůzka 1on1 se přesouvá na ${when}, místo: ${where}.`,
+      subject = `Změna termínu schůzky 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
+      paras = ['Dobrý den,', `schůzka 1na1 se přesouvá na ${when}, místo: ${where}.`,
         extra.from ? `Původní termín: ${esc(fmtWhen(extra.from))}.` : ''].filter(Boolean);
       break;
     case 'cancelled':
-      subject = `Zrušená schůzka 1on1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
-      paras = ['Dobrý den,', `schůzka 1on1 ${when} je zrušená.`,
+      subject = `Zrušená schůzka 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
+      paras = ['Dobrý den,', `schůzka 1na1 ${when} je zrušená.`,
         'Nový termín je možné kdykoli vybrat přes odkaz níže.'];
       link = { href: cfg().siteUrl, label: 'Vybrat nový termín' };
       method = 'CANCEL';
       break;
     case 'reminder':
-      subject = `Připomínka schůzky 1on1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
-      paras = ['Dobrý den,', `připomínám schůzku 1on1 ${when}, místo: ${where}.`];
+      subject = `Připomínka schůzky 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
+      paras = ['Dobrý den,', `připomínám schůzku 1na1 ${when}, místo: ${where}.`];
       break;
     default: throw new Error('Neznámý typ e-mailu');
   }
