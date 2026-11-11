@@ -1,7 +1,7 @@
 import {
   handle, json, body, loadData, mutate, HttpError, findSlot, findByToken, canBook, canCancel,
   cleanName, cleanEmail, activeBookingOf, makeBooking, publicSlot, sortSlots, trySend, t, now,
-  BOOK_MIN_HOURS, CANCEL_MIN_HOURS, fmtWhen, cfg, MEETING_MINUTES,
+  BOOK_MIN_HOURS, CANCEL_MIN_HOURS, fmtWhen, cfg, MEETING_MINUTES, cleanPodklad, pdfUrl,
 } from '../lib/core.mjs';
 
 const freeSlots = data => sortSlots(data).filter(canBook).map(publicSlot);
@@ -13,7 +13,7 @@ export default handle(async (req) => {
   // Volné termíny
   if (route === 'slots' && req.method === 'GET') {
     const { data } = await loadData();
-    return json({ slots: freeSlots(data), place: cfg().place, minutes: MEETING_MINUTES });
+    return json({ slots: freeSlots(data), place: cfg().place, minutes: MEETING_MINUTES, hasForm: !!cfg().formUrl });
   }
 
   // Nová rezervace
@@ -21,12 +21,13 @@ export default handle(async (req) => {
     const b = await body(req);
     const name = cleanName(b.name);
     const email = cleanEmail(b.email);
+    const podklad = cleanPodklad(b.podklad);
     const { result } = await mutate(data => {
       const slot = findSlot(data, b.slotId);
       if (!canBook(slot)) throw new HttpError(409, 'Tento termín už není volný.');
       const other = activeBookingOf(data, email);
       if (other) throw new HttpError(409, `Na tento e-mail už je zapsaná schůzka (${fmtWhen(other)}). Termín jde změnit přes odkaz v potvrzovacím e-mailu.`);
-      slot.booking = makeBooking(name, email);
+      slot.booking = makeBooking(name, email, podklad);
       return { slot: structuredClone(slot) };
     });
     const sent = await trySend('confirm', result.slot, result.slot.booking);
@@ -41,6 +42,9 @@ export default handle(async (req) => {
     return json({
       slot: publicSlot(slot),
       name: slot.booking.name,
+      podklad: slot.booking.podklad || null,
+      formUrl: !past && t(slot.start) > now() ? cfg().formUrl || null : null,
+      pdfUrl: pdfUrl(),
       past,
       canCancel: !past && canCancel(slot),
       canReschedule: !past && canCancel(slot),
@@ -83,7 +87,21 @@ export default handle(async (req) => {
     return json({ ok: true, slot: publicSlot(result.to) });
   }
 
+  // Změna volby podkladu, kolega dostane e-mail s podkladem
+  if (route === 'podklad' && req.method === 'POST') {
+    const b = await body(req);
+    const podklad = cleanPodklad(b.podklad);
+    const { result } = await mutate(data => {
+      const slot = findByToken(data, b.t);
+      if (t(slot.start) <= now()) throw new HttpError(409, 'Schůzka už začala.');
+      slot.booking.podklad = podklad;
+      return structuredClone(slot);
+    });
+    const sent = await trySend('podklad', result, result.booking);
+    return json({ ok: true, emailSent: sent });
+  }
+
   throw new HttpError(404, 'Neznámá adresa.');
 });
 
-export const config = { path: ['/api/slots', '/api/book', '/api/booking', '/api/cancel', '/api/reschedule'] };
+export const config = { path: ['/api/slots', '/api/book', '/api/booking', '/api/cancel', '/api/reschedule', '/api/podklad'] };

@@ -33,6 +33,11 @@
         <label>Jméno a příjmení<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
         <label>E-mail<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
       </div>
+      <div class="fieldlabel">Podklad k rozhovoru</div>
+      <div class="pkpick">
+        <label class="pkopt"><input type="radio" name="podklad" value="paper" required><span class="ic" data-icon="book"></span><span>Přinesu na papíře<small>PDF přijde e-mailem</small></span></label>
+        <label class="pkopt"><input type="radio" name="podklad" value="online" required><span class="ic" data-icon="list"></span><span>Vyplním online<small>do začátku schůzky</small></span></label>
+      </div>
       <div class="actions"><button type="submit" id="submit" data-icon="check">Rezervovat</button></div>
     </form>
   </section>
@@ -73,14 +78,16 @@ form.onsubmit = async e => {
   btn.disabled = true;
   try {
     const fd = new FormData(form);
-    const r = await api('/api/book', { method: 'POST', data: { slotId: chosen.id, name: fd.get('name'), email: fd.get('email') } });
+    const r = await api('/api/book', { method: 'POST', data: { slotId: chosen.id, name: fd.get('name'), email: fd.get('email'), podklad: fd.get('podklad') } });
     $('#pick').classList.add('hidden');
     hideMsg(msg);
     $('#confetti').innerHTML = confetti();
     $('#doneBadge').innerHTML = icon('check');
     $('#doneWhen').textContent = cap(fmt.when(r.slot));
     $('#doneMail').textContent = r.emailSent
-      ? 'Zarezervováno. Potvrzení s pozvánkou do kalendáře přišlo na e-mail.'
+      ? (fd.get('podklad') === 'online'
+          ? 'Zarezervováno. Potvrzení s pozvánkou do kalendáře a odkazem na online podklad přišlo na e-mail.'
+          : 'Zarezervováno. Potvrzení s pozvánkou do kalendáře a podkladem v PDF přišlo na e-mail.')
       : 'Zarezervováno. Potvrzovací e-mail se nepodařilo odeslat, pro pozdější změny slouží odkaz níže.';
     $('#manageLink').href = `/sprava.html?t=${encodeURIComponent(r.token)}`;
     $('#done').classList.remove('hidden');

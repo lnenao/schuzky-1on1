@@ -41,6 +41,20 @@
     </div>
   </section>
 
+  <section id="pk" class="hidden">
+    <h2><span class="ico" data-icon="book"></span>Podklad k rozhovoru</h2>
+    <div class="card">
+      <form id="pkForm" class="form" style="margin:0">
+        <div class="pkpick">
+        <label class="pkopt"><input type="radio" name="podklad" value="paper" required><span class="ic" data-icon="book"></span><span>Přinesu na papíře<small>PDF přijde e-mailem</small></span></label>
+        <label class="pkopt"><input type="radio" name="podklad" value="online" required><span class="ic" data-icon="list"></span><span>Vyplním online<small>do začátku schůzky</small></span></label>
+      </div>
+        <div class="actions" id="pkLinks"></div>
+        <div class="actions hidden" id="pkSaveRow"><button type="submit" data-icon="check">Uložit volbu</button></div>
+      </form>
+    </div>
+  </section>
+
   <section id="move" class="hidden">
     <h2><span class="ico" data-icon="cal"></span>Nový termín</h2>
     <div id="picker"></div>
@@ -70,11 +84,38 @@ async function load() {
     $('#btnMove').disabled = !info.canReschedule;
     $('#buttons').classList.toggle('hidden', info.past);
     $('#detail').classList.remove('hidden');
+    renderPk();
   } catch (e) {
     showMsg(msg, esc(e.message), 'err');
     $('#newLink').classList.remove('hidden');
   }
 }
+
+function renderPk() {
+  if (info.past) return;
+  const f = $('#pkForm');
+  if (info.podklad) f.querySelector(`input[value="${info.podklad}"]`).checked = true;
+  const links = [];
+  if (info.podklad === 'online' && info.formUrl) links.push(`<a class="btn" href="${esc(info.formUrl)}" target="_blank" rel="noopener">${icon('list')}Vyplnit online</a>`);
+  if (info.podklad === 'paper') links.push(`<a class="btn" href="${esc(info.pdfUrl)}" target="_blank" rel="noopener">${icon('book')}Stáhnout PDF</a>`);
+  $('#pkLinks').innerHTML = links.join('');
+  $('#pkSaveRow').classList.add('hidden');
+  $('#pk').classList.remove('hidden');
+}
+$('#pkForm').onchange = () => {
+  const v = new FormData($('#pkForm')).get('podklad');
+  $('#pkSaveRow').classList.toggle('hidden', v === info.podklad);
+};
+$('#pkForm').onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const podklad = new FormData($('#pkForm')).get('podklad');
+    await api('/api/podklad', { method: 'POST', data: { t: token, podklad } });
+    info.podklad = podklad;
+    await load();
+    showMsg(msg, 'Volba je uložená. Podklad přišel e-mailem.');
+  } catch (err) { showMsg(msg, esc(err.message), 'err'); }
+};
 
 $('#btnCancel').onclick = () => $('#confirmCancel').classList.remove('hidden');
 $('#btnCancelNo').onclick = () => $('#confirmCancel').classList.add('hidden');
@@ -83,6 +124,7 @@ $('#btnCancelYes').onclick = async () => {
     await api('/api/cancel', { method: 'POST', data: { t: token } });
     $('#detail').classList.add('hidden');
     $('#move').classList.add('hidden');
+    $('#pk').classList.add('hidden');
     showMsg(msg, 'Schůzka je zrušená. Potvrzení přišlo e-mailem.');
     $('#newLink').classList.remove('hidden');
   } catch (e) { showMsg(msg, esc(e.message), 'err'); }

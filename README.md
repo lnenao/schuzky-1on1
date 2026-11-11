@@ -35,10 +35,12 @@ Pravidla se mění v `netlify/lib/core.mjs` (konstanty nahoře).
    | `GMAIL_APP_PASSWORD` | heslo aplikace z kroku 1 |
    | `OWNER_NAME` | Ondřej Lněnička |
    | `MEETING_PLACE` | ředitelna |
-   | `SITE_URL` | jen pokud používáš vlastní doménu, např. https://schuzky.mrackova.cz |
+   | `PODKLAD_FORM_URL` | odkaz na Google formulář s podkladem k rozhovoru |
+| `SITE_URL` | jen pokud používáš vlastní doménu, např. https://schuzky.mrackova.cz |
 
-5. **Znovu nasadit.** Deploys → Trigger deploy → Deploy site (proměnné se projeví až po novém nasazení).
-6. Otevři `/admin.html`, přihlas se, vypiš termíny a kolegům pošli hlavní adresu webu.
+5. **Podklad v PDF.** Ulož PDF s podkladem k rozhovoru do složky `public` pod názvem `podklad.pdf`. Kolegové, kteří zvolí papír, ho dostanou v příloze potvrzení.
+6. **Znovu nasadit.** Deploys → Trigger deploy → Deploy site (proměnné se projeví až po novém nasazení).
+7. Otevři `/admin.html`, přihlas se, vypiš termíny a kolegům pošli hlavní adresu webu.
 
 Data se ukládají do Netlify Blobs (součást webu, nic dalšího se nezakládá). Připomínky posílá naplánovaná funkce `reminders` každou hodinu, její běh je vidět v Netlify v Logs → Functions.
 

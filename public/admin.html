@@ -33,7 +33,10 @@
       <div class="stat free"><div class="bub" data-icon="cal"></div><div><div class="value" id="stFree">0</div><div class="label">volno</div></div></div>
     </div>
 
-    <h2><span class="ico" data-icon="plus"></span>Přidat termíny</h2>
+    <div class="daynav" id="daynav"></div>
+
+    <h2 id="addTitle"><span class="ico" data-icon="plus"></span>Přidat termíny</h2>
+    <div id="redoNote" class="msg ok hidden"></div>
     <form id="add" class="form">
       <div class="row2">
         <label>Den<input type="date" name="date" required></label>
@@ -227,9 +230,24 @@ $('#add').onsubmit = async e => {
   e.preventDefault();
   const starts = generated();
   if (!starts.length) return showMsg(msg, 'Z tohoto nastavení nevznikne žádný termín.', 'err');
+  const days = new Set(starts.map(fmt.dayKey));
+  const existing = slots.filter(s => days.has(fmt.dayKey(s.start)));
+  if (existing.length) {
+    const newSet = new Set(starts);
+    const lost = existing.filter(s => s.booking && !newSet.has(s.start));
+    const text = `${days.size === 1 ? 'Tento den už má' : 'Tyto dny už mají'} vypsané termíny (${existing.length}). Uložením se přepíšou novým rozpisem.`
+      + (lost.length ? `\n\nZruší se ${lost.length} ${lost.length === 1 ? 'rezervace' : 'rezervací'}: ${lost.map(s => s.booking.name).join(', ')}.` : '')
+      + '\n\nPokračovat?';
+    if (!confirm(text)) return;
+  }
   try {
-    const r = await call('slots-add', { starts });
-    showMsg(msg, `Přidáno: ${r.added}.` + (r.skipped ? ` Přeskočeno kvůli překryvu: ${r.skipped}.` : ''));
+    const r = await call('days-replace', { starts, notify: notify() });
+    let t = `Uloženo ${r.added} ${r.added === 1 ? 'termín' : r.added < 5 ? 'termíny' : 'termínů'}.`;
+    if (r.kept) t += ` Zachované rezervace: ${r.kept}.`;
+    if (r.cancelled) t += ` Zrušené rezervace: ${r.cancelled}.`;
+    if (r.emailSent === false) t += ' E-mail se nepodařilo odeslat.';
+    $('#redoNote').classList.add('hidden');
+    showMsg(msg, t);
     await load();
   } catch {}
 };
@@ -249,7 +267,7 @@ function slotHtml(s, past) {
   return `<div class="slot ${b ? 'booked' : ''}" data-id="${s.id}">
     <div class="head">
       <span class="tm">${fmt.time(s.start)} až ${fmt.time(s.end)}</span>
-      <span class="who">${b ? `<strong>${esc(b.name)}</strong> <span class="muted">${esc(b.email)}</span>` : '<span class="muted">volno</span>'}</span>
+      <span class="who">${b ? `<strong>${esc(b.name)}</strong> <span class="muted">${esc(b.email)}</span> ${pkBadge(b.podklad)}` : '<span class="muted">volno</span>'}</span>
       <span class="actions">${actions}</span>
     </div>${ed}</div>`;
 }
@@ -261,6 +279,10 @@ function editorHtml(s, mode) {
         <label>Jméno a příjmení<input name="name" required value="${esc(b.name || '')}"></label>
         <label>E-mail<input name="email" type="email" required value="${esc(b.email || '')}"></label>
       </div>
+      <label>Podklad k rozhovoru<select name="podklad">
+        <option value="paper" ${b.podklad !== 'online' ? 'selected' : ''}>přinese na papíře</option>
+        <option value="online" ${b.podklad === 'online' ? 'selected' : ''}>vyplní online</option>
+      </select></label>
       <div class="actions"><button type="submit">Uložit</button><button type="button" class="secondary" data-a="close">Zpět</button></div></form>`;
   if (mode === 'time') return `<form class="editor form" data-f="time">
       <div class="row2">
@@ -285,7 +307,14 @@ function renderList(list, past) {
   if (!list.length) return `<div class="card empty">${icon('coffee', 'i big')}<p class="muted" style="margin:8px 0 0">${past ? 'Zatím nic.' : 'Žádné vypsané termíny.'}</p></div>`;
   const days = groupByDay(list);
   if (past) days.reverse();
-  return days.map(d => `<div class="day admin">${calTile(d[0].start)}<div><h3>${esc(cap(fmt.day(d[0].start)))}</h3>${d.map(s => slotHtml(s, past)).join('')}</div></div>`).join('');
+  return days.map(d => {
+    const key = fmt.dayKey(d[0].start);
+    const tools = past ? '' : `<div class="actions daytools" data-day="${key}">
+        <button class="small secondary" data-d="redo" data-icon="cal">Předělat den</button>
+        ${d.some(s => !s.booking) ? '<button class="small secondary" data-d="free" data-icon="x">Smazat volné</button>' : ''}
+        <button class="small danger" data-d="all" data-icon="x">Smazat den</button></div>`;
+    return `<div class="day admin" id="day-${key}">${calTile(d[0].start)}<div><div class="dayhead"><h3>${esc(cap(fmt.day(d[0].start)))}</h3>${tools}</div>${d.map(s => slotHtml(s, past)).join('')}</div></div>`;
+  }).join('');
 }
 
 function render() {
@@ -296,7 +325,45 @@ function render() {
   $('#stFree').textContent = up.filter(s => !s.booking).length;
   $('#upcoming').innerHTML = renderList(up, false);
   $('#past').innerHTML = renderList(past, true);
+  $('#daynav').innerHTML = groupByDay(up).map(d => {
+    const booked = d.filter(s => s.booking).length;
+    return `<a class="dsq ${booked === d.length ? 'full' : ''}" href="#day-${fmt.dayKey(d[0].start)}">
+      <span class="m">${esc(fmt.part(d[0].start, { month: 'short' }).replace('.', ''))}</span>
+      <span class="d">${fmt.part(d[0].start, { day: 'numeric' })}</span>
+      <span class="w">${esc(fmt.part(d[0].start, { weekday: 'short' }))}</span>
+      <span class="c">${booked}/${d.length}</span></a>`;
+  }).join('');
+  fillIcons($('#upcoming'));
 }
+const pkBadge = p => p === 'online' ? `<span class="pk on">${icon('list')}online</span>` : p === 'paper' ? `<span class="pk">${icon('book')}papír</span>` : '';
+
+/* ---------- celé dny ---------- */
+$('#upcoming').addEventListener('click', async e => {
+  const b = e.target.closest('[data-d]');
+  if (!b) return;
+  const day = b.closest('.daytools').dataset.day;
+  const inDay = slots.filter(s => fmt.dayKey(s.start) === day);
+  const booked = inDay.filter(s => s.booking);
+  const label = cap(fmt.day(inDay[0].start));
+  if (b.dataset.d === 'redo') {
+    const f = $('#add');
+    f.date.value = day; f.weeks.value = '1';
+    $('#redoNote').innerHTML = `${icon('cal')}<div>${esc(label)}: nastav nový rozpis a dej Přidat. Den se přepíše celý.</div>`;
+    $('#redoNote').classList.remove('hidden');
+    updatePreview();
+    $('#addTitle').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  if (b.dataset.d === 'free') {
+    if (!confirm(`${label}: smazat volné termíny (${inDay.length - booked.length})? Obsazené zůstanou.`)) return;
+    return act('day-delete', { day, onlyFree: true }, 'Volné termíny jsou smazané.');
+  }
+  if (b.dataset.d === 'all') {
+    const t = `${label}: smazat celý den? Počet termínů: ${inDay.length}.` + (booked.length ? `\n\nZruší se ${booked.length} ${booked.length === 1 ? 'rezervace' : 'rezervací'}: ${booked.map(s => s.booking.name).join(', ')}.` : '');
+    if (!confirm(t)) return;
+    return act('day-delete', { day }, 'Den je smazaný.');
+  }
+});
 
 /* ---------- akce ---------- */
 const notify = () => $('#notify').checked;
@@ -331,8 +398,8 @@ $('#app').addEventListener('submit', e => {
   const id = f.closest('.slot').dataset.id;
   const d = Object.fromEntries(new FormData(f));
   switch (f.dataset.f) {
-    case 'edit': return act('booking-update', { id, name: d.name, email: d.email }, 'Uloženo.');
-    case 'book': return act('book', { id, name: d.name, email: d.email }, 'Kolega je zapsaný.');
+    case 'edit': return act('booking-update', { id, name: d.name, email: d.email, podklad: d.podklad }, 'Uloženo.');
+    case 'book': return act('book', { id, name: d.name, email: d.email, podklad: d.podklad }, 'Kolega je zapsaný.');
     case 'time': return act('slot-update', { id, start: toIso(d.date, d.time) }, 'Čas je změněný.');
     case 'move': return act('move', { fromId: id, toId: d.to }, 'Schůzka je přesunutá.');
   }

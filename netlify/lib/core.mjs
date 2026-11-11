@@ -16,6 +16,7 @@ export const cfg = () => ({
   ownerName: env('OWNER_NAME', 'Ondřej Lněnička'),
   place: env('MEETING_PLACE', 'ředitelna'),
   siteUrl: env('SITE_URL') || env('URL') || 'http://localhost:8888',
+  formUrl: env('PODKLAD_FORM_URL'),
 });
 
 /* ---------- úložiště ---------- */
@@ -120,8 +121,8 @@ export function overlaps(data, start, end, exceptId) {
   return data.slots.some(s => s.id !== exceptId && t(s.start) < t(end) && t(start) < t(s.end));
 }
 
-export function makeBooking(name, email) {
-  return { name, email, token: newToken(), uid: `${newId()}@schuzky-1on1`, seq: 0, createdAt: new Date().toISOString(), reminderSent: false };
+export function makeBooking(name, email, podklad) {
+  return { name, email, podklad, token: newToken(), uid: `${newId()}@schuzky-1on1`, seq: 0, createdAt: new Date().toISOString(), reminderSent: false };
 }
 
 export const sortSlots = data => data.slots.sort((a, b) => t(a.start) - t(b.start));
@@ -140,6 +141,7 @@ export function fmtDate(iso) {
 export function fmtTime(iso) {
   return new Intl.DateTimeFormat('cs-CZ', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 }
+export const dayKey = iso => new Intl.DateTimeFormat('sv-SE', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
 export const fmtWhen = slot => `${fmtDate(slot.start)}, ${fmtTime(slot.start)} až ${fmtTime(slot.end)}`;
 
 const esc = s => s.toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -180,15 +182,55 @@ function ics(slot, booking, method) {
   return lines.join('\r\n');
 }
 
-const manageUrl = booking => `${cfg().siteUrl.replace(/\/$/, '')}/sprava.html?t=${encodeURIComponent(booking.token)}`;
+const base = () => cfg().siteUrl.replace(/\/$/, '');
+const manageUrl = booking => `${base()}/sprava.html?t=${encodeURIComponent(booking.token)}`;
+export const pdfUrl = () => `${base()}/podklad.pdf`;
 
-function layout(paragraphs, link) {
+/* ---------- podklad k rozhovoru ---------- */
+export const PODKLAD = { paper: 'na papíře', online: 'online' };
+export function cleanPodklad(v) {
+  if (!Object.hasOwn(PODKLAD, v ?? '')) throw new HttpError(400, 'Chybí volba, jak bude podklad k rozhovoru vyplněný.');
+  return v;
+}
+let pdfCache;
+async function loadPdf() {
+  if (pdfCache) return pdfCache;
+  try {
+    const r = await fetch(pdfUrl());
+    if (!r.ok) return null;
+    pdfCache = Buffer.from(await r.arrayBuffer());
+    return pdfCache;
+  } catch { return null; }
+}
+// Odstavec a tlačítko k podkladu podle volby kolegy
+async function podkladPart(booking, slot) {
+  const form = cfg().formUrl;
+  if (booking.podklad === 'online') {
+    return {
+      para: `Podklad k rozhovoru je potřeba vyplnit online do začátku schůzky (${esc(fmtTime(slot.start))}).`,
+      link: form ? { href: form, label: 'Vyplnit podklad online' } : null,
+    };
+  }
+  if (booking.podklad === 'paper') {
+    const pdf = await loadPdf();
+    return {
+      para: pdf ? 'Podklad k rozhovoru je v příloze. Na schůzku stačí přinést vyplněný na papíře.'
+                : 'Podklad k rozhovoru je ke stažení přes odkaz níže. Na schůzku stačí přinést vyplněný na papíře.',
+      link: { href: pdfUrl(), label: 'Stáhnout podklad (PDF)' },
+      attachment: pdf ? { filename: 'podklad-k-rozhovoru.pdf', content: pdf, contentType: 'application/pdf' } : null,
+    };
+  }
+  return { para: '', link: null };
+}
+
+const btn = (l, primary) => `<a href="${esc(l.href)}" style="background:${primary ? '#590907' : '#a5a79b'};color:${primary ? '#e8d2b5' : '#3d0605'};text-decoration:none;padding:10px 20px;border-radius:999px;display:inline-block;font-weight:700;margin:0 8px 8px 0">${esc(l.label)}</a>`;
+function layout(paragraphs, links) {
   return `<div style="background:#e8d2b5;padding:24px 12px;font-family:Nunito,Calibri,Arial,sans-serif">
 <div style="max-width:560px;margin:0 auto;background:#fbf6ef;border-radius:16px;overflow:hidden">
 <div style="background:#590907;color:#fbf6ef;padding:18px 24px;font-size:20px;font-weight:700">Schůzky 1na1 s ředitelem</div>
 <div style="padding:22px 24px;font-size:15px;color:#2a2220;line-height:1.55">
 ${paragraphs.map(p => `<p style="margin:0 0 12px">${p}</p>`).join('\n')}
-${link ? `<p style="margin:20px 0"><a href="${esc(link.href)}" style="background:#590907;color:#e8d2b5;text-decoration:none;padding:10px 20px;border-radius:999px;display:inline-block;font-weight:700">${esc(link.label)}</a></p>` : ''}
+${links.length ? `<p style="margin:20px 0 10px">${links.map((l, i) => btn(l, i === 0)).join('')}</p>` : ''}
 <p style="margin:18px 0 0">${esc(cfg().ownerName)}</p></div></div></div>`;
 }
 const strip = s => s.replace(/<[^>]+>/g, '');
@@ -200,7 +242,7 @@ export async function sendMail(kind, slot, booking, extra = {}) {
   const when = `<strong>${esc(fmtWhen(slot))}</strong>`;
   const where = esc(c.place);
   const manage = { href: manageUrl(booking), label: 'Zrušit nebo přesunout' };
-  let subject, paras, link = manage, method = 'REQUEST';
+  let subject, paras, links = [manage], method = 'REQUEST', withPodklad = true;
 
   switch (kind) {
     case 'confirm':
@@ -213,12 +255,17 @@ export async function sendMail(kind, slot, booking, extra = {}) {
       paras = ['Dobrý den,', `schůzka 1na1 se přesouvá na ${when}, místo: ${where}.`,
         extra.from ? `Původní termín: ${esc(fmtWhen(extra.from))}.` : ''].filter(Boolean);
       break;
+    case 'podklad':
+      subject = `Podklad ke schůzce 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
+      paras = ['Dobrý den,', `posílám podklad ke schůzce 1na1 ${when}.`];
+      break;
     case 'cancelled':
       subject = `Zrušená schůzka 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
       paras = ['Dobrý den,', `schůzka 1na1 ${when} je zrušená.`,
         'Nový termín je možné kdykoli vybrat přes odkaz níže.'];
-      link = { href: cfg().siteUrl, label: 'Vybrat nový termín' };
+      links = [{ href: c.siteUrl, label: 'Vybrat nový termín' }];
       method = 'CANCEL';
+      withPodklad = false;
       break;
     case 'reminder':
       subject = `Připomínka schůzky 1na1: ${fmtDate(slot.start)} v ${fmtTime(slot.start)}`;
@@ -227,15 +274,24 @@ export async function sendMail(kind, slot, booking, extra = {}) {
     default: throw new Error('Neznámý typ e-mailu');
   }
 
-  const html = layout(paras, link);
-  const text = [...paras.map(strip), '', `${link.label}: ${link.href}`, '', c.ownerName].join('\n');
+  const attachments = [];
+  if (withPodklad) {
+    const pk = await podkladPart(booking, slot);
+    if (pk.para) paras.push(pk.para);
+    if (pk.link) links.unshift(pk.link);
+    // Připomínka a přesun posílají PDF jen odkazem, příloha jde u potvrzení a změny volby
+    if (pk.attachment && (kind === 'confirm' || kind === 'podklad')) attachments.push(pk.attachment);
+  }
+
+  const html = layout(paras, links);
+  const text = [...paras.map(strip), '', ...links.map(l => `${l.label}: ${l.href}`), '', c.ownerName].join('\n');
   const calendar = ics(slot, booking, method);
 
   await tr.sendMail({
     from: { name: c.ownerName, address: c.gmailUser },
     to: { name: booking.name, address: booking.email },
     replyTo: c.gmailUser,
-    subject, text, html,
+    subject, text, html, attachments,
     icalEvent: { method, filename: 'schuzka.ics', content: calendar },
   });
   return true;

@@ -1,7 +1,7 @@
 import {
   handle, json, body, loadData, mutate, HttpError, requireAdmin, findSlot, newId, overlaps,
   cleanName, cleanEmail, makeBooking, activeBookingOf, sortSlots, prune, trySend, t, fmtWhen,
-  MEETING_MINUTES,
+  MEETING_MINUTES, cleanPodklad, dayKey,
 } from '../lib/core.mjs';
 
 const MIN = 60 * 1000;
@@ -15,7 +15,7 @@ function parseStart(v) {
 const markReminder = slot => { if (slot.booking) slot.booking.reminderSent = t(slot.start) - Date.now() < 24 * 3600 * 1000; };
 const adminView = s => ({
   id: s.id, start: s.start, end: s.end,
-  booking: s.booking ? { name: s.booking.name, email: s.booking.email, createdAt: s.booking.createdAt, reminderSent: s.booking.reminderSent } : null,
+  booking: s.booking ? { name: s.booking.name, email: s.booking.email, podklad: s.booking.podklad || null, createdAt: s.booking.createdAt, reminderSent: s.booking.reminderSent } : null,
 });
 
 export default handle(async (req) => {
@@ -91,12 +91,13 @@ export default handle(async (req) => {
     case 'book': {
       const name = cleanName(b.name);
       const email = cleanEmail(b.email);
+      const podklad = cleanPodklad(b.podklad);
       const r = await mutate(data => {
         const slot = findSlot(data, b.id);
         if (slot.booking) throw new HttpError(409, 'Termín je obsazený.');
         const other = activeBookingOf(data, email);
         if (other && !b.allowSecond) throw new HttpError(409, `${name} už má zapsaný termín ${fmtWhen(other)}.`);
-        slot.booking = makeBooking(name, email);
+        slot.booking = makeBooking(name, email, podklad);
         markReminder(slot);
         return structuredClone(slot);
       });
@@ -109,11 +110,13 @@ export default handle(async (req) => {
     case 'booking-update': {
       const name = cleanName(b.name);
       const email = cleanEmail(b.email);
+      const podklad = cleanPodklad(b.podklad);
       await mutate(data => {
         const slot = findSlot(data, b.id);
         if (!slot.booking) throw new HttpError(409, 'Termín není obsazený.');
         slot.booking.name = name;
         slot.booking.email = email;
+        slot.booking.podklad = podklad;
       });
       out = { ok: true };
       break;
@@ -150,6 +153,51 @@ export default handle(async (req) => {
       });
       if (notify) mails.push(['moved', r.result.to, r.result.to.booking, { from: r.result.from }]);
       out = { ok: true };
+      break;
+    }
+
+    // Den znovu: všechny termíny dotčených dnů se nahradí novými.
+    // Rezervace, jejíž čas v novém rozpisu zůstal, se přenese; ostatní se zruší.
+    case 'days-replace': {
+      const list = Array.isArray(b.starts) ? b.starts : [];
+      if (!list.length || list.length > 400) throw new HttpError(400, 'Žádné termíny k přidání.');
+      const starts = [...new Set(list.map(v => parseStart(v).toISOString()))];
+      const days = new Set(starts.map(dayKey));
+      const r = await mutate(data => {
+        prune(data);
+        const old = data.slots.filter(s => days.has(dayKey(s.start)));
+        const keepBooked = new Map(old.filter(s => s.booking).map(s => [s.start, s]));
+        data.slots = data.slots.filter(s => !days.has(dayKey(s.start)));
+        let added = 0, kept = 0;
+        for (const st of starts) {
+          const end = new Date(t(st) + MEETING_MINUTES * MIN).toISOString();
+          if (overlaps(data, st, end)) continue;
+          const prev = keepBooked.get(st);
+          data.slots.push({ id: prev ? prev.id : newId(), start: st, end, booking: prev ? prev.booking : null });
+          if (prev) { keepBooked.delete(st); kept++; }
+          added++;
+        }
+        sortSlots(data);
+        const cancelled = [...keepBooked.values()].map(s => { s.booking.seq++; return structuredClone(s); });
+        return { added, kept, cancelled, replacedDays: days.size, removed: old.length };
+      });
+      if (notify) for (const s of r.result.cancelled) mails.push(['cancelled', s, s.booking]);
+      out = { added: r.result.added, kept: r.result.kept, cancelled: r.result.cancelled.length, removed: r.result.removed };
+      break;
+    }
+
+    // Smazání dne: všech termínů, nebo jen volných
+    case 'day-delete': {
+      const day = String(b.day || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new HttpError(400, 'Neplatný den.');
+      const r = await mutate(data => {
+        const hit = data.slots.filter(s => dayKey(s.start) === day && (!b.onlyFree || !s.booking));
+        const ids = new Set(hit.map(s => s.id));
+        data.slots = data.slots.filter(s => !ids.has(s.id));
+        return hit.filter(s => s.booking).map(s => { s.booking.seq++; return structuredClone(s); });
+      });
+      if (notify) for (const s of r.result) mails.push(['cancelled', s, s.booking]);
+      out = { ok: true, cancelled: r.result.length };
       break;
     }
 
