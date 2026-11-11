@@ -27,12 +27,8 @@
 
     <h2>Přidat termíny</h2>
     <form id="add" class="form">
-      <div class="row3">
-        <label>Den<input type="date" name="date" required></label>
-        <label>Od<input type="time" name="from" required step="300" value="14:00"></label>
-        <label>Do<input type="time" name="to" required step="300" value="16:00"></label>
-      </div>
       <div class="row2">
+        <label>Den<input type="date" name="date" required></label>
         <label>Opakovat každý týden
           <select name="weeks">
             <option value="1">jen tento den</option>
@@ -40,15 +36,25 @@
             <option value="6">6 týdnů</option><option value="8">8 týdnů</option><option value="10">10 týdnů</option>
           </select>
         </label>
-        <label>Mezera mezi schůzkami
-          <select name="gap">
-            <option value="0">bez mezery</option>
-            <option value="5">5 minut</option><option value="10">10 minut</option><option value="15">15 minut</option>
-            <option value="20">20 minut</option><option value="30">30 minut</option><option value="45">45 minut</option>
-            <option value="60">60 minut</option>
-          </select>
-        </label>
       </div>
+
+      <fieldset>
+        <legend>Části dne</legend>
+        <div id="parts"></div>
+        <button type="button" class="secondary small" id="addPart">Přidat část</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Učím</legend>
+        <div class="lessons" id="lessons"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Další pauzy</legend>
+        <div id="pauses"></div>
+        <button type="button" class="secondary small" id="addPause">Přidat pauzu</button>
+      </fieldset>
+
       <p id="preview" class="muted"></p>
       <div class="actions"><button type="submit">Přidat</button></div>
     </form>
@@ -116,21 +122,84 @@ $('#logout').onclick = logout;
 $('#reload').onclick = () => { hideMsg(msg); load().catch(() => {}); };
 
 /* ---------- přidávání termínů ---------- */
+// Vyučovací hodiny včetně následující přestávky
+const LESSONS = [
+  ['1.', '08:00', '08:55', '8:00 až 8:45'],
+  ['2.', '08:55', '10:00', '8:55 až 9:40'],
+  ['3.', '10:00', '10:55', '10:00 až 10:45'],
+  ['4.', '10:55', '11:50', '10:55 až 11:40'],
+  ['5.', '11:50', '12:45', '11:50 až 12:35'],
+  ['6.', '12:45', '13:30', '12:45 až 13:30'],
+];
+const GAPS = [0, 5, 10, 15, 20, 30, 45, 60];
+
+$('#lessons').innerHTML = LESSONS.map((l, i) =>
+  `<label class="lesson"><input type="checkbox" name="lesson" value="${i}"> ${l[0]} hodina <small>${l[3]}</small></label>`).join('');
+
+function addPart(from = '08:00', to = '17:00', gap = 0) {
+  const div = document.createElement('div');
+  div.className = 'part';
+  div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}" required></label>
+    <label>Do<input type="time" data-k="to" step="300" value="${to}" required></label>
+    <label class="gapf">Mezera<select data-k="gap">${GAPS.map(g => `<option value="${g}" ${g === gap ? 'selected' : ''}>${g ? g + ' min' : 'bez mezery'}</option>`).join('')}</select></label>
+    <button type="button" class="x" title="Odebrat">×</button>`;
+  $('#parts').append(div);
+}
+function addPause(from = '', to = '') {
+  const div = document.createElement('div');
+  div.className = 'part pause';
+  div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}"></label>
+    <label>Do<input type="time" data-k="to" step="300" value="${to}"></label>
+    <button type="button" class="x" title="Odebrat">×</button>`;
+  $('#pauses').append(div);
+}
+$('#addPart').onclick = () => { addPart('13:30', '17:00', 0); updatePreview(); };
+$('#addPause').onclick = () => { addPause('11:30', '12:30'); updatePreview(); };
+$('#add').addEventListener('click', e => {
+  const x = e.target.closest('.x');
+  if (!x) return;
+  x.closest('.part').remove();
+  updatePreview();
+});
+addPart();
+
+const rows = sel => [...document.querySelectorAll(`${sel} .part`)].map(r =>
+  Object.fromEntries([...r.querySelectorAll('[data-k]')].map(i => [i.dataset.k, i.value])));
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const hhmm = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+
+// Vrátí začátky schůzek v minutách od půlnoci pro jeden den
+function dayStarts() {
+  const parts = rows('#parts').filter(p => p.from && p.to);
+  const pauses = [
+    ...[...document.querySelectorAll('#lessons input:checked')].map(i => LESSONS[+i.value]).map(l => [mins(l[1]), mins(l[2])]),
+    ...rows('#pauses').filter(p => p.from && p.to).map(p => [mins(p.from), mins(p.to)]),
+  ];
+  const starts = new Set();
+  for (const p of parts) {
+    const gap = +p.gap, end = mins(p.to);
+    let cur = mins(p.from);
+    while (cur + MIN <= end) {
+      const hit = pauses.filter(([a, b]) => cur < b && a < cur + MIN);
+      if (hit.length) { cur = Math.max(...hit.map(h => h[1])); continue; }
+      starts.add(cur);
+      cur += MIN + gap;
+    }
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
 function generated() {
   const f = new FormData($('#add'));
-  const date = f.get('date'), from = f.get('from'), to = f.get('to'), weeks = +f.get('weeks'), gap = +f.get('gap');
-  if (!date || !from || !to) return [];
+  const date = f.get('date'), weeks = +f.get('weeks');
+  if (!date) return [];
+  const starts = dayStarts();
   const out = [];
   for (let w = 0; w < weeks; w++) {
     const base = new Date(`${date}T00:00`);
     base.setDate(base.getDate() + 7 * w);
     const d = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
-    let cur = new Date(`${d}T${from}`);
-    const end = new Date(`${d}T${to}`);
-    while (cur.getTime() + MIN * 60000 <= end.getTime()) {
-      out.push(cur.toISOString());
-      cur = new Date(cur.getTime() + (MIN + gap) * 60000);
-    }
+    for (const m of starts) out.push(new Date(`${d}T${hhmm(m)}`).toISOString());
   }
   return out;
 }
@@ -140,13 +209,16 @@ function updatePreview() {
   const days = new Set(list.map(fmt.dayKey)).size;
   const perDay = days ? list.filter(s => fmt.dayKey(s) === fmt.dayKey(list[0])).map(fmt.time) : [];
   const word = n === 1 ? 'termín' : n < 5 ? 'termíny' : 'termínů';
-  $('#preview').textContent = n ? `Vznikne ${n} ${word} po ${MIN} minutách${days > 1 ? ` (${days} ${days < 5 ? 'dny' : 'dnů'})` : ''}: ${perDay.join(', ')}` : 'Z tohoto rozsahu nevznikne žádný termín.';
+  $('#preview').textContent = n
+    ? `Vznikne ${n} ${word} po ${MIN} minutách${days > 1 ? ` (${days} ${days < 5 ? 'dny' : 'dnů'})` : ''}:\n${perDay.join(', ')}`
+    : 'Z tohoto nastavení nevznikne žádný termín.';
 }
-$('#add').oninput = updatePreview;
+$('#add').addEventListener('input', updatePreview);
+$('#add').addEventListener('change', updatePreview);
 $('#add').onsubmit = async e => {
   e.preventDefault();
   const starts = generated();
-  if (!starts.length) return showMsg(msg, 'Z tohoto rozsahu nevznikne žádný termín.', 'err');
+  if (!starts.length) return showMsg(msg, 'Z tohoto nastavení nevznikne žádný termín.', 'err');
   try {
     const r = await call('slots-add', { starts });
     showMsg(msg, `Přidáno: ${r.added}.` + (r.skipped ? ` Přeskočeno kvůli překryvu: ${r.skipped}.` : ''));
