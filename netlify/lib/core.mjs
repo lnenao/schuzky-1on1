@@ -183,9 +183,9 @@ function ics(slot, booking, method) {
 const manageUrl = booking => `${cfg().siteUrl.replace(/\/$/, '')}/sprava.html?t=${encodeURIComponent(booking.token)}`;
 
 function layout(paragraphs, link) {
-  const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:15px;color:#1d2b33;line-height:1.55;max-width:560px">
+  const html = `<div style="font-family:Calibri,Arial,sans-serif;font-size:15px;color:#2a2220;line-height:1.55;max-width:560px">
 ${paragraphs.map(p => `<p style="margin:0 0 12px">${p}</p>`).join('\n')}
-${link ? `<p style="margin:18px 0"><a href="${esc(link.href)}" style="background:#0f4761;color:#fff;text-decoration:none;padding:9px 16px;border-radius:6px;display:inline-block">${esc(link.label)}</a></p>` : ''}
+${link ? `<p style="margin:18px 0"><a href="${esc(link.href)}" style="background:#590907;color:#f7efe4;text-decoration:none;padding:9px 16px;border-radius:6px;display:inline-block">${esc(link.label)}</a></p>` : ''}
 <p style="margin:18px 0 0">${esc(cfg().ownerName)}</p></div>`;
   return html;
 }
