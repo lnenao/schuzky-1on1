@@ -4,14 +4,22 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Správa schůzek 1on1</title>
+<title>Správa schůzek 1na1</title>
+<meta name="theme-color" content="#590907">
+<link rel="icon" href="/art.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main class="page">
-  <h1>Správa schůzek 1on1</h1>
+  <header class="hero">
+    <div>
+      <h1>Správa schůzek <span class="u">1na1</span></h1>
+      <div class="chips"><span class="chip" data-icon="user">s ředitelem</span></div>
+    </div>
+    <img src="/art.svg" alt="">
+  </header>
   <div id="msg" class="msg hidden"></div>
 
   <form id="login" class="form hidden">
@@ -21,11 +29,11 @@
 
   <div id="app" class="hidden">
     <div class="stats">
-      <div class="stat"><div class="value" id="stBooked">0</div><div class="label">obsazeno</div></div>
-      <div class="stat"><div class="value" id="stFree">0</div><div class="label">volno</div></div>
+      <div class="stat"><div class="bub" data-icon="user"></div><div><div class="value" id="stBooked">0</div><div class="label">obsazeno</div></div></div>
+      <div class="stat free"><div class="bub" data-icon="cal"></div><div><div class="value" id="stFree">0</div><div class="label">volno</div></div></div>
     </div>
 
-    <h2>Přidat termíny</h2>
+    <h2><span class="ico" data-icon="plus"></span>Přidat termíny</h2>
     <form id="add" class="form">
       <div class="row2">
         <label>Den<input type="date" name="date" required></label>
@@ -41,7 +49,7 @@
       <fieldset>
         <legend>Části dne</legend>
         <div id="parts"></div>
-        <button type="button" class="secondary small" id="addPart">Přidat část</button>
+        <button type="button" class="secondary small" id="addPart" data-icon="plus">Přidat část</button>
       </fieldset>
 
       <fieldset>
@@ -52,14 +60,14 @@
       <fieldset>
         <legend>Další pauzy</legend>
         <div id="pauses"></div>
-        <button type="button" class="secondary small" id="addPause">Přidat pauzu</button>
+        <button type="button" class="secondary small" id="addPause" data-icon="plus">Přidat pauzu</button>
       </fieldset>
 
       <p id="preview" class="muted"></p>
-      <div class="actions"><button type="submit">Přidat</button></div>
+      <div class="actions"><button type="submit" data-icon="check">Přidat</button></div>
     </form>
 
-    <h2>Nadcházející</h2>
+    <h2><span class="ico" data-icon="list"></span>Nadcházející</h2>
     <div class="toolbar">
       <label class="check"><input type="checkbox" id="notify" checked> Posílat kolegům e-mail o změnách</label>
       <div class="actions"><button class="secondary small" id="reload">Obnovit</button><button class="secondary small" id="logout">Odhlásit</button></div>
@@ -83,7 +91,7 @@ let openEditor = null; // {id, mode}
 const MIN = 30;
 const pad = n => String(n).padStart(2, '0');
 const localDate = iso => fmt.dayKey(iso);
-const localTime = iso => fmt.time(iso);
+const localTime = iso => fmt.part(iso, { hour: '2-digit', minute: '2-digit' });
 const toIso = (d, t) => new Date(`${d}T${t}`).toISOString();
 
 async function call(path, data) {
@@ -134,7 +142,7 @@ const LESSONS = [
 const GAPS = [0, 5, 10, 15, 20, 30, 45, 60];
 
 $('#lessons').innerHTML = LESSONS.map((l, i) =>
-  `<label class="lesson"><input type="checkbox" name="lesson" value="${i}"> ${l[0]} hodina <small>${l[3]}</small></label>`).join('');
+  `<label class="lesson"><input type="checkbox" name="lesson" value="${i}"><b>${l[0]}</b>hodina<small>${l[3]}</small></label>`).join('');
 
 function addPart(from = '08:00', to = '17:00', gap = 0) {
   const div = document.createElement('div');
@@ -142,7 +150,7 @@ function addPart(from = '08:00', to = '17:00', gap = 0) {
   div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}" required></label>
     <label>Do<input type="time" data-k="to" step="300" value="${to}" required></label>
     <label class="gapf">Mezera<select data-k="gap">${GAPS.map(g => `<option value="${g}" ${g === gap ? 'selected' : ''}>${g ? g + ' min' : 'bez mezery'}</option>`).join('')}</select></label>
-    <button type="button" class="x" title="Odebrat">×</button>`;
+    <button type="button" class="x" title="Odebrat">${icon('x')}</button>`;
   $('#parts').append(div);
 }
 function addPause(from = '', to = '') {
@@ -150,7 +158,7 @@ function addPause(from = '', to = '') {
   div.className = 'part pause';
   div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}"></label>
     <label>Do<input type="time" data-k="to" step="300" value="${to}"></label>
-    <button type="button" class="x" title="Odebrat">×</button>`;
+    <button type="button" class="x" title="Odebrat">${icon('x')}</button>`;
   $('#pauses').append(div);
 }
 $('#addPart').onclick = () => { addPart('13:30', '17:00', 0); updatePreview(); };
@@ -274,10 +282,10 @@ function editorHtml(s, mode) {
 }
 
 function renderList(list, past) {
-  if (!list.length) return `<p class="muted">${past ? 'Zatím nic.' : 'Žádné vypsané termíny.'}</p>`;
+  if (!list.length) return `<div class="card empty">${icon('coffee', 'i big')}<p class="muted" style="margin:8px 0 0">${past ? 'Zatím nic.' : 'Žádné vypsané termíny.'}</p></div>`;
   const days = groupByDay(list);
   if (past) days.reverse();
-  return days.map(d => `<div class="day"><h3>${esc(cap(fmt.day(d[0].start)))}</h3>${d.map(s => slotHtml(s, past)).join('')}</div>`).join('');
+  return days.map(d => `<div class="day admin">${calTile(d[0].start)}<div><h3>${esc(cap(fmt.day(d[0].start)))}</h3>${d.map(s => slotHtml(s, past)).join('')}</div></div>`).join('');
 }
 
 function render() {

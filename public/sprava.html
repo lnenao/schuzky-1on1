@@ -4,38 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Moje schůzka 1on1</title>
+<meta name="theme-color" content="#590907">
+<title>Moje schůzka 1na1</title>
+<link rel="icon" href="/art.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main class="page">
-  <h1>Moje schůzka 1on1</h1>
+  <header class="hero">
+    <div>
+      <h1>Moje schůzka <span class="u">1na1</span></h1>
+      <div class="chips"><span class="chip" data-icon="user">s ředitelem</span></div>
+    </div>
+    <img src="/art.svg" alt="">
+  </header>
+
   <div id="msg" class="msg hidden"></div>
 
   <section id="detail" class="hidden">
-    <div class="callout"><p><strong id="when"></strong></p><p class="muted" id="note"></p></div>
-    <div class="actions" id="buttons">
-      <button id="btnMove">Přesunout</button>
-      <button id="btnCancel" class="secondary">Zrušit</button>
-    </div>
-    <div id="confirmCancel" class="actions hidden" style="margin-top:12px">
-      <button id="btnCancelYes" class="danger">Ano, zrušit schůzku</button>
-      <button id="btnCancelNo" class="secondary">Ponechat</button>
+    <div class="day">
+      <div id="tile"></div>
+      <div>
+        <p class="big-when" id="when"></p>
+        <p class="muted" id="note"></p>
+        <div class="actions" id="buttons">
+          <button id="btnMove" data-icon="move">Přesunout</button>
+          <button id="btnCancel" class="secondary" data-icon="x">Zrušit</button>
+        </div>
+        <div id="confirmCancel" class="actions hidden" style="margin-top:12px">
+          <button id="btnCancelYes" class="danger">Ano, zrušit schůzku</button>
+          <button id="btnCancelNo" class="secondary">Ponechat</button>
+        </div>
+      </div>
     </div>
   </section>
 
   <section id="move" class="hidden">
-    <h2>Nový termín</h2>
+    <h2><span class="ico" data-icon="cal"></span>Nový termín</h2>
     <div id="picker"></div>
     <div id="moveBar" class="sticky hidden">
-      <p><strong id="moveTo"></strong></p>
-      <div class="actions"><button id="btnMoveYes">Přesunout sem</button><button id="btnMoveNo" class="secondary">Zpět</button></div>
+      <div class="ticket" id="moveTo"></div>
+      <div class="actions" style="margin-top:12px"><button id="btnMoveYes" data-icon="check">Přesunout sem</button><button id="btnMoveNo" class="secondary">Zpět</button></div>
     </div>
   </section>
 
-  <p id="newLink" class="hidden"><a class="btn" href="/">Vybrat nový termín</a></p>
+  <p id="newLink" class="hidden"><a class="btn" href="/" data-icon="cal">Vybrat nový termín</a></p>
 </main>
 
 <script src="/app.js"></script>
@@ -47,6 +62,7 @@ let info = null, target = null;
 async function load() {
   try {
     info = await api(`/api/booking?t=${encodeURIComponent(token || '')}`);
+    $('#tile').innerHTML = calTile(info.slot.start);
     $('#when').textContent = cap(fmt.when(info.slot));
     $('#note').textContent = info.past ? 'Schůzka už proběhla.'
       : `Přesunout lze nejpozději ${info.rules.CANCEL_MIN_HOURS} hodinu předem na termín vzdálený aspoň ${info.rules.BOOK_MIN_HOURS} hodin. Zrušit lze nejpozději ${info.rules.CANCEL_MIN_HOURS} hodinu předem.`;
@@ -76,7 +92,7 @@ $('#btnMove').onclick = () => {
   $('#move').classList.remove('hidden');
   renderPicker($('#picker'), info.freeSlots, s => {
     target = s;
-    $('#moveTo').textContent = cap(fmt.when(s));
+    $('#moveTo').innerHTML = icon('cal') + esc(cap(fmt.when(s)));
     $('#moveBar').classList.remove('hidden');
   }, 'Momentálně nejsou vypsané žádné jiné volné termíny.');
   $('#move').scrollIntoView({ behavior: 'smooth' });

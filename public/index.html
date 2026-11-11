@@ -4,37 +4,47 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Schůzka 1on1</title>
+<meta name="theme-color" content="#590907">
+<title>Schůzky 1na1 s ředitelem</title>
+<link rel="icon" href="/art.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <main class="page">
-  <h1>Schůzka 1on1</h1>
-  <p class="muted" id="info"></p>
+  <header class="hero">
+    <div>
+      <h1>Schůzky <span class="u">1na1</span> s ředitelem</h1>
+      <div class="chips" id="chips"></div>
+    </div>
+    <img src="/art.svg" alt="">
+  </header>
 
   <div id="msg" class="msg hidden"></div>
 
   <section id="pick">
+    <h2><span class="ico" data-icon="cal"></span>Volné termíny</h2>
     <div id="picker"><p class="muted">Načítám termíny…</p></div>
 
     <form id="form" class="form sticky hidden" autocomplete="on">
-      <div><strong id="chosen"></strong></div>
+      <div class="ticket" id="chosen"></div>
       <div class="row2">
         <label>Jméno a příjmení<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
         <label>E-mail<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
       </div>
-      <div class="actions"><button type="submit" id="submit">Rezervovat</button></div>
+      <div class="actions"><button type="submit" id="submit" data-icon="check">Rezervovat</button></div>
     </form>
   </section>
 
   <section id="done" class="hidden">
-    <div class="callout">
-      <p><strong id="doneWhen"></strong></p>
-      <p id="doneMail"></p>
+    <div class="card done">
+      <div id="confetti" class="confetti-wrap"></div>
+      <div class="badge" id="doneBadge"></div>
+      <p class="big-when" id="doneWhen"></p>
+      <p class="muted" id="doneMail"></p>
+      <div class="actions"><a class="btn" id="manageLink" href="#" data-icon="move">Zrušit nebo přesunout</a></div>
     </div>
-    <div class="actions"><a class="btn" id="manageLink" href="#">Zrušit nebo přesunout</a></div>
   </section>
 </main>
 
@@ -46,10 +56,10 @@ const form = $('#form'), msg = $('#msg');
 async function load() {
   try {
     const { slots, place, minutes } = await api('/api/slots');
-    $('#info').textContent = `${minutes} minut, ${place}`;
+    $('#chips').innerHTML = `<span class="chip">${icon('clock')}${minutes} minut</span><span class="chip">${icon('door')}${esc(place)}</span>`;
     renderPicker($('#picker'), slots, s => {
       chosen = s;
-      $('#chosen').textContent = cap(fmt.when(s));
+      $('#chosen').innerHTML = icon('cal') + esc(cap(fmt.when(s)));
       form.classList.remove('hidden');
       hideMsg(msg);
     });
@@ -66,12 +76,15 @@ form.onsubmit = async e => {
     const r = await api('/api/book', { method: 'POST', data: { slotId: chosen.id, name: fd.get('name'), email: fd.get('email') } });
     $('#pick').classList.add('hidden');
     hideMsg(msg);
-    $('#doneWhen').textContent = `Zarezervováno: ${fmt.when(r.slot)}`;
+    $('#confetti').innerHTML = confetti();
+    $('#doneBadge').innerHTML = icon('check');
+    $('#doneWhen').textContent = cap(fmt.when(r.slot));
     $('#doneMail').textContent = r.emailSent
-      ? 'Potvrzení s pozvánkou do kalendáře přišlo na e-mail.'
-      : 'Potvrzovací e-mail se nepodařilo odeslat. Pro pozdější změny slouží odkaz níže.';
+      ? 'Zarezervováno. Potvrzení s pozvánkou do kalendáře přišlo na e-mail.'
+      : 'Zarezervováno. Potvrzovací e-mail se nepodařilo odeslat, pro pozdější změny slouží odkaz níže.';
     $('#manageLink').href = `/sprava.html?t=${encodeURIComponent(r.token)}`;
     $('#done').classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err) {
     showMsg(msg, esc(err.message), 'err');
     if (err.status === 409) { chosen = null; form.classList.add('hidden'); load(); }
