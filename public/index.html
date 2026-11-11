@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Schůzka 1on1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="page">
+  <h1>Schůzka 1on1</h1>
+  <p class="muted" id="info"></p>
+
+  <div id="msg" class="msg hidden"></div>
+
+  <section id="pick">
+    <div id="picker"><p class="muted">Načítám termíny…</p></div>
+
+    <form id="form" class="form sticky hidden" autocomplete="on">
+      <div><strong id="chosen"></strong></div>
+      <div class="row2">
+        <label>Jméno a příjmení<input name="name" required minlength="3" maxlength="80" autocomplete="name"></label>
+        <label>E-mail<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
+      </div>
+      <div class="actions"><button type="submit" id="submit">Rezervovat</button></div>
+    </form>
+  </section>
+
+  <section id="done" class="hidden">
+    <div class="callout">
+      <p><strong id="doneWhen"></strong></p>
+      <p id="doneMail"></p>
+    </div>
+    <div class="actions"><a class="btn" id="manageLink" href="#">Zrušit nebo přesunout</a></div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+<script>
+let chosen = null;
+const form = $('#form'), msg = $('#msg');
+
+async function load() {
+  try {
+    const { slots, place, minutes } = await api('/api/slots');
+    $('#info').textContent = `${minutes} minut, ${place}`;
+    renderPicker($('#picker'), slots, s => {
+      chosen = s;
+      $('#chosen').textContent = cap(fmt.when(s));
+      form.classList.remove('hidden');
+      hideMsg(msg);
+    });
+  } catch (e) { showMsg(msg, esc(e.message), 'err'); }
+}
+
+form.onsubmit = async e => {
+  e.preventDefault();
+  if (!chosen) return;
+  const btn = $('#submit');
+  btn.disabled = true;
+  try {
+    const fd = new FormData(form);
+    const r = await api('/api/book', { method: 'POST', data: { slotId: chosen.id, name: fd.get('name'), email: fd.get('email') } });
+    $('#pick').classList.add('hidden');
+    hideMsg(msg);
+    $('#doneWhen').textContent = `Zarezervováno: ${fmt.when(r.slot)}`;
+    $('#doneMail').textContent = r.emailSent
+      ? 'Potvrzení s pozvánkou do kalendáře přišlo na e-mail.'
+      : 'Potvrzovací e-mail se nepodařilo odeslat. Pro pozdější změny slouží odkaz níže.';
+    $('#manageLink').href = `/sprava.html?t=${encodeURIComponent(r.token)}`;
+    $('#done').classList.remove('hidden');
+  } catch (err) {
+    showMsg(msg, esc(err.message), 'err');
+    if (err.status === 409) { chosen = null; form.classList.add('hidden'); load(); }
+  } finally { btn.disabled = false; }
+};
+
+load();
+</script>
+</body>
+</html>
