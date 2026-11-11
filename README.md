@@ -1,6 +1,6 @@
-# Schůzky 1on1
+# Schůzky 1na1
 
-Rezervace schůzek 1on1 na Netlify. Kolegové si vybírají z vypsaných termínů, správa je na `/admin.html`.
+Rezervace schůzek 1na1 na Netlify. Kolegové si vybírají z vypsaných termínů, správa je na `/admin.html`.
 
 ## Stránky
 
@@ -23,7 +23,7 @@ Pravidla se mění v `netlify/lib/core.mjs` (konstanty nahoře).
 
 ## Nasazení
 
-1. **Heslo aplikace pro Gmail.** V Google účtu musí být zapnuté dvoufázové ověření. Na https://myaccount.google.com/apppasswords vytvoř heslo aplikace (název třeba „Schůzky 1on1“) a zkopíruj 16 znaků.
+1. **Heslo aplikace pro Gmail.** V Google účtu musí být zapnuté dvoufázové ověření. Na https://myaccount.google.com/apppasswords vytvoř heslo aplikace (název třeba „Schůzky 1na1“) a zkopíruj 16 znaků.
 2. **GitHub.** Vytvoř nový soukromý repozitář a nahraj do něj obsah této složky (bez `node_modules`).
 3. **Netlify.** Add new site → Import an existing project → GitHub → vyber repozitář. Nastavení buildu se načte z `netlify.toml`, nic neměň a dej Deploy.
 4. **Proměnné.** Site configuration → Environment variables → přidej:
@@ -42,4 +42,4 @@ Pravidla se mění v `netlify/lib/core.mjs` (konstanty nahoře).
 
 Data se ukládají do Netlify Blobs (součást webu, nic dalšího se nezakládá). Připomínky posílá naplánovaná funkce `reminders` každou hodinu, její běh je vidět v Netlify v Logs → Functions.
 
-Gmail má limit zhruba 500 e-mailů denně, pro 1on1 schůzky je to bohatě dost.
+Gmail má limit zhruba 500 e-mailů denně, pro 1na1 schůzky je to bohatě dost.
