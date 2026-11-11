@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Správa schůzek 1na1</title>
+<meta name="theme-color" content="#590907">
+<link rel="icon" href="/art.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <div>
+      <h1>Správa schůzek <span class="u">1na1</span></h1>
+      <div class="chips"><span class="chip" data-icon="user">s ředitelem</span></div>
+    </div>
+    <img src="/art.svg" alt="">
+  </header>
+  <div id="msg" class="msg hidden"></div>
+
+  <form id="login" class="form hidden">
+    <label>Heslo<input type="password" name="pw" required autocomplete="current-password"></label>
+    <div class="actions"><button type="submit">Přihlásit</button></div>
+  </form>
+
+  <div id="app" class="hidden">
+    <div class="stats">
+      <div class="stat"><div class="bub" data-icon="user"></div><div><div class="value" id="stBooked">0</div><div class="label">obsazeno</div></div></div>
+      <div class="stat free"><div class="bub" data-icon="cal"></div><div><div class="value" id="stFree">0</div><div class="label">volno</div></div></div>
+    </div>
+
+    <h2><span class="ico" data-icon="plus"></span>Přidat termíny</h2>
+    <form id="add" class="form">
+      <div class="row2">
+        <label>Den<input type="date" name="date" required></label>
+        <label>Opakovat každý týden
+          <select name="weeks">
+            <option value="1">jen tento den</option>
+            <option value="2">2 týdny</option><option value="3">3 týdny</option><option value="4">4 týdny</option>
+            <option value="6">6 týdnů</option><option value="8">8 týdnů</option><option value="10">10 týdnů</option>
+          </select>
+        </label>
+      </div>
+
+      <fieldset>
+        <legend>Části dne</legend>
+        <div id="parts"></div>
+        <button type="button" class="secondary small" id="addPart" data-icon="plus">Přidat část</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Učím</legend>
+        <div class="lessons" id="lessons"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Další pauzy</legend>
+        <div id="pauses"></div>
+        <button type="button" class="secondary small" id="addPause" data-icon="plus">Přidat pauzu</button>
+      </fieldset>
+
+      <p id="preview" class="muted"></p>
+      <div class="actions"><button type="submit" data-icon="check">Přidat</button></div>
+    </form>
+
+    <h2><span class="ico" data-icon="list"></span>Nadcházející</h2>
+    <div class="toolbar">
+      <label class="check"><input type="checkbox" id="notify" checked> Posílat kolegům e-mail o změnách</label>
+      <div class="actions"><button class="secondary small" id="reload">Obnovit</button><button class="secondary small" id="logout">Odhlásit</button></div>
+    </div>
+    <div id="upcoming"></div>
+
+    <details id="pastBox">
+      <summary>Proběhlé schůzky</summary>
+      <div id="past"></div>
+    </details>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+const msg = $('#msg');
+let pw = sessionStorage.getItem('adminPw') || '';
+let slots = [];
+let openEditor = null; // {id, mode}
+
+const MIN = 30;
+const pad = n => String(n).padStart(2, '0');
+const localDate = iso => fmt.dayKey(iso);
+const localTime = iso => fmt.part(iso, { hour: '2-digit', minute: '2-digit' });
+const toIso = (d, t) => new Date(`${d}T${t}`).toISOString();
+
+async function call(path, data) {
+  try {
+    const r = await api(`/api/admin/${path}`, { method: data ? 'POST' : 'GET', data, admin: pw });
+    return r;
+  } catch (e) {
+    if (e.status === 401) { logout(); showMsg(msg, 'Špatné heslo.', 'err'); }
+    else showMsg(msg, esc(e.message), 'err');
+    throw e;
+  }
+}
+
+async function load() {
+  const r = await call('data');
+  slots = r.slots;
+  render();
+}
+
+function logout() {
+  sessionStorage.removeItem('adminPw'); pw = '';
+  $('#app').classList.add('hidden'); $('#login').classList.remove('hidden');
+}
+
+$('#login').onsubmit = async e => {
+  e.preventDefault();
+  pw = new FormData(e.target).get('pw');
+  try {
+    await load();
+    sessionStorage.setItem('adminPw', pw);
+    hideMsg(msg);
+    $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
+  } catch {}
+};
+$('#logout').onclick = logout;
+$('#reload').onclick = () => { hideMsg(msg); load().catch(() => {}); };
+
+/* ---------- přidávání termínů ---------- */
+// Vyučovací hodiny včetně následující přestávky
+const LESSONS = [
+  ['1.', '08:00', '08:55', '8:00 až 8:45'],
+  ['2.', '08:55', '10:00', '8:55 až 9:40'],
+  ['3.', '10:00', '10:55', '10:00 až 10:45'],
+  ['4.', '10:55', '11:50', '10:55 až 11:40'],
+  ['5.', '11:50', '12:45', '11:50 až 12:35'],
+  ['6.', '12:45', '13:30', '12:45 až 13:30'],
+];
+const GAPS = [0, 5, 10, 15, 20, 30, 45, 60];
+
+$('#lessons').innerHTML = LESSONS.map((l, i) =>
+  `<label class="lesson"><input type="checkbox" name="lesson" value="${i}"><b>${l[0]}</b>hodina<small>${l[3]}</small></label>`).join('');
+
+function addPart(from = '08:00', to = '17:00', gap = 0) {
+  const div = document.createElement('div');
+  div.className = 'part';
+  div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}" required></label>
+    <label>Do<input type="time" data-k="to" step="300" value="${to}" required></label>
+    <label class="gapf">Mezera<select data-k="gap">${GAPS.map(g => `<option value="${g}" ${g === gap ? 'selected' : ''}>${g ? g + ' min' : 'bez mezery'}</option>`).join('')}</select></label>
+    <button type="button" class="x" title="Odebrat">${icon('x')}</button>`;
+  $('#parts').append(div);
+}
+function addPause(from = '', to = '') {
+  const div = document.createElement('div');
+  div.className = 'part pause';
+  div.innerHTML = `<label>Od<input type="time" data-k="from" step="300" value="${from}"></label>
+    <label>Do<input type="time" data-k="to" step="300" value="${to}"></label>
+    <button type="button" class="x" title="Odebrat">${icon('x')}</button>`;
+  $('#pauses').append(div);
+}
+$('#addPart').onclick = () => { addPart('13:30', '17:00', 0); updatePreview(); };
+$('#addPause').onclick = () => { addPause('11:30', '12:30'); updatePreview(); };
+$('#add').addEventListener('click', e => {
+  const x = e.target.closest('.x');
+  if (!x) return;
+  x.closest('.part').remove();
+  updatePreview();
+});
+addPart();
+
+const rows = sel => [...document.querySelectorAll(`${sel} .part`)].map(r =>
+  Object.fromEntries([...r.querySelectorAll('[data-k]')].map(i => [i.dataset.k, i.value])));
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+const hhmm = m => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+
+// Vrátí začátky schůzek v minutách od půlnoci pro jeden den
+function dayStarts() {
+  const parts = rows('#parts').filter(p => p.from && p.to);
+  const pauses = [
+    ...[...document.querySelectorAll('#lessons input:checked')].map(i => LESSONS[+i.value]).map(l => [mins(l[1]), mins(l[2])]),
+    ...rows('#pauses').filter(p => p.from && p.to).map(p => [mins(p.from), mins(p.to)]),
+  ];
+  const starts = new Set();
+  for (const p of parts) {
+    const gap = +p.gap, end = mins(p.to);
+    let cur = mins(p.from);
+    while (cur + MIN <= end) {
+      const hit = pauses.filter(([a, b]) => cur < b && a < cur + MIN);
+      if (hit.length) { cur = Math.max(...hit.map(h => h[1])); continue; }
+      starts.add(cur);
+      cur += MIN + gap;
+    }
+  }
+  return [...starts].sort((a, b) => a - b);
+}
+
+function generated() {
+  const f = new FormData($('#add'));
+  const date = f.get('date'), weeks = +f.get('weeks');
+  if (!date) return [];
+  const starts = dayStarts();
+  const out = [];
+  for (let w = 0; w < weeks; w++) {
+    const base = new Date(`${date}T00:00`);
+    base.setDate(base.getDate() + 7 * w);
+    const d = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+    for (const m of starts) out.push(new Date(`${d}T${hhmm(m)}`).toISOString());
+  }
+  return out;
+}
+function updatePreview() {
+  const list = generated();
+  const n = list.length;
+  const days = new Set(list.map(fmt.dayKey)).size;
+  const perDay = days ? list.filter(s => fmt.dayKey(s) === fmt.dayKey(list[0])).map(fmt.time) : [];
+  const word = n === 1 ? 'termín' : n < 5 ? 'termíny' : 'termínů';
+  $('#preview').textContent = n
+    ? `Vznikne ${n} ${word} po ${MIN} minutách${days > 1 ? ` (${days} ${days < 5 ? 'dny' : 'dnů'})` : ''}:\n${perDay.join(', ')}`
+    : 'Z tohoto nastavení nevznikne žádný termín.';
+}
+$('#add').addEventListener('input', updatePreview);
+$('#add').addEventListener('change', updatePreview);
+$('#add').onsubmit = async e => {
+  e.preventDefault();
+  const starts = generated();
+  if (!starts.length) return showMsg(msg, 'Z tohoto nastavení nevznikne žádný termín.', 'err');
+  try {
+    const r = await call('slots-add', { starts });
+    showMsg(msg, `Přidáno: ${r.added}.` + (r.skipped ? ` Přeskočeno kvůli překryvu: ${r.skipped}.` : ''));
+    await load();
+  } catch {}
+};
+
+/* ---------- výpis ---------- */
+function slotHtml(s, past) {
+  const b = s.booking;
+  const ed = openEditor && openEditor.id === s.id ? editorHtml(s, openEditor.mode) : '';
+  const actions = past ? '' : b
+    ? `<button class="small secondary" data-a="edit">Upravit</button>
+       <button class="small secondary" data-a="move">Přesunout</button>
+       <button class="small secondary" data-a="time">Změnit čas</button>
+       <button class="small secondary" data-a="cancel">Zrušit</button>`
+    : `<button class="small secondary" data-a="book">Zapsat</button>
+       <button class="small secondary" data-a="time">Změnit čas</button>
+       <button class="small secondary" data-a="delete">Smazat</button>`;
+  return `<div class="slot ${b ? 'booked' : ''}" data-id="${s.id}">
+    <div class="head">
+      <span class="tm">${fmt.time(s.start)} až ${fmt.time(s.end)}</span>
+      <span class="who">${b ? `<strong>${esc(b.name)}</strong> <span class="muted">${esc(b.email)}</span>` : '<span class="muted">volno</span>'}</span>
+      <span class="actions">${actions}</span>
+    </div>${ed}</div>`;
+}
+
+function editorHtml(s, mode) {
+  const b = s.booking || {};
+  if (mode === 'edit' || mode === 'book') return `<form class="editor form" data-f="${mode}">
+      <div class="row2">
+        <label>Jméno a příjmení<input name="name" required value="${esc(b.name || '')}"></label>
+        <label>E-mail<input name="email" type="email" required value="${esc(b.email || '')}"></label>
+      </div>
+      <div class="actions"><button type="submit">Uložit</button><button type="button" class="secondary" data-a="close">Zpět</button></div></form>`;
+  if (mode === 'time') return `<form class="editor form" data-f="time">
+      <div class="row2">
+        <label>Den<input type="date" name="date" required value="${localDate(s.start)}"></label>
+        <label>Začátek<input type="time" name="time" required step="300" value="${localTime(s.start)}"></label>
+      </div>
+      <div class="actions"><button type="submit">Uložit</button><button type="button" class="secondary" data-a="close">Zpět</button></div></form>`;
+  if (mode === 'move') {
+    const free = slots.filter(x => !x.booking && new Date(x.start) > new Date());
+    if (!free.length) return `<div class="editor"><p class="muted">Žádný volný termín k přesunu.</p><button class="secondary small" data-a="close">Zpět</button></div>`;
+    return `<form class="editor form" data-f="move">
+      <label>Přesunout na<select name="to">${free.map(x => `<option value="${x.id}">${esc(cap(fmt.when(x)))}</option>`).join('')}</select></label>
+      <div class="actions"><button type="submit">Přesunout</button><button type="button" class="secondary" data-a="close">Zpět</button></div></form>`;
+  }
+  if (mode === 'cancel' || mode === 'delete') return `<div class="editor actions">
+      <button class="danger" data-a="${mode}-yes">${mode === 'cancel' ? 'Ano, zrušit rezervaci' : 'Ano, smazat termín'}</button>
+      <button class="secondary" data-a="close">Zpět</button></div>`;
+  return '';
+}
+
+function renderList(list, past) {
+  if (!list.length) return `<div class="card empty">${icon('coffee', 'i big')}<p class="muted" style="margin:8px 0 0">${past ? 'Zatím nic.' : 'Žádné vypsané termíny.'}</p></div>`;
+  const days = groupByDay(list);
+  if (past) days.reverse();
+  return days.map(d => `<div class="day admin">${calTile(d[0].start)}<div><h3>${esc(cap(fmt.day(d[0].start)))}</h3>${d.map(s => slotHtml(s, past)).join('')}</div></div>`).join('');
+}
+
+function render() {
+  const nowT = Date.now();
+  const up = slots.filter(s => new Date(s.end) > nowT);
+  const past = slots.filter(s => new Date(s.end) <= nowT && s.booking);
+  $('#stBooked').textContent = up.filter(s => s.booking).length;
+  $('#stFree').textContent = up.filter(s => !s.booking).length;
+  $('#upcoming').innerHTML = renderList(up, false);
+  $('#past').innerHTML = renderList(past, true);
+}
+
+/* ---------- akce ---------- */
+const notify = () => $('#notify').checked;
+async function act(path, data, okText) {
+  try {
+    const r = await call(path, { ...data, notify: notify() });
+    openEditor = null;
+    let t = okText;
+    if (r.emailSent === false) t += ' E-mail se nepodařilo odeslat.';
+    showMsg(msg, t);
+    await load();
+  } catch {}
+}
+
+$('#app').addEventListener('click', e => {
+  const btn = e.target.closest('[data-a]');
+  const row = e.target.closest('.slot');
+  if (!btn || !row) return;
+  const id = row.dataset.id, a = btn.dataset.a;
+  if (a === 'close') { openEditor = null; return render(); }
+  if (a === 'cancel-yes') return act('cancel', { id }, 'Rezervace je zrušená.');
+  if (a === 'delete-yes') return act('slot-delete', { id }, 'Termín je smazaný.');
+  openEditor = { id, mode: a };
+  hideMsg(msg);
+  render();
+});
+
+$('#app').addEventListener('submit', e => {
+  const f = e.target.closest('form[data-f]');
+  if (!f) return;
+  e.preventDefault();
+  const id = f.closest('.slot').dataset.id;
+  const d = Object.fromEntries(new FormData(f));
+  switch (f.dataset.f) {
+    case 'edit': return act('booking-update', { id, name: d.name, email: d.email }, 'Uloženo.');
+    case 'book': return act('book', { id, name: d.name, email: d.email }, 'Kolega je zapsaný.');
+    case 'time': return act('slot-update', { id, start: toIso(d.date, d.time) }, 'Čas je změněný.');
+    case 'move': return act('move', { fromId: id, toId: d.to }, 'Schůzka je přesunutá.');
+  }
+});
+
+if (pw) load().then(() => $('#app').classList.remove('hidden')).catch(() => $('#login').classList.remove('hidden'));
+else $('#login').classList.remove('hidden');
+$('#add').date.value = fmt.dayKey(new Date().toISOString());
+updatePreview();
+</script>
+</body>
+</html>
